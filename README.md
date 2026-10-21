@@ -48,7 +48,9 @@ So Phase 1 uses a different stack, picked to be fast, accurate, and effectively
 
 Net result: **no OpenAI key needed anywhere**, and a full demo costs nothing
 beyond Fish Audio's free tier running out mid-way (at which point it falls
-back to a free local voice anyway).
+back to a free local voice anyway). As of the hosted backend (see
+"Architecture: hosted backend" below), these keys aren't even something an
+end user ever sees — they live server-side, not in this repo's `.env`.
 
 If more time opens up, revisiting Bolna's Web Call SDK (browser-based calls,
 not phone calls) is the most plausible path to using their stack — noted as a
@@ -164,19 +166,14 @@ This also runs `electron-rebuild` and builds the dashboard's React app (via
 > --foreground-scripts`, or `cd dashboard-ui && npm rebuild esbuild
 > --foreground-scripts`), then retry.
 
-### 2. Add your API keys
+### 2. No API keys needed
 
-Copy `.env.example` to `.env` and fill in:
-
-```
-GROQ_API_KEY=         # speech-to-text (Whisper via Groq) - free tier, no card
-FISH_API_KEY=         # text-to-speech (Fish Audio) - free tier
-OPENROUTER_API_KEY=   # fact extraction + folder routing (Claude via OpenRouter)
-SAYSO_HOTKEY=F9       # optional, this is the default
-```
-
-If `FISH_API_KEY` is missing or Fish Audio errors, confirmations still speak
-via your OS's built-in voice — no key needed for that path at all.
+That's it - no `.env` to create, no keys to find. The app talks to Say.so's
+hosted backend by default, which holds the actual Groq/Fish Audio/OpenRouter
+keys so you never have to. See "Architecture: hosted backend" below for how
+that works and `.env.example` for the (entirely optional) overrides - e.g.
+pointing at a locally-running backend during development, or a different
+hotkey than F9.
 
 ### 3. Seed starter folders (optional but recommended for a demo)
 
@@ -271,6 +268,53 @@ anything under `dashboard-ui/src`, rebuild with `npm run build:dashboard`
 Say.so — the dashboard window loads `dashboard-ui/dist/index.html`, a static
 build, not a dev server, so edits don't hot-reload.
 
+## Architecture: hosted backend
+
+Originally this app required the end user to bring their own Groq/Fish
+Audio/OpenRouter API keys, set in `.env`. That's fine for development, but
+not for "a judge/customer just installs and uses it" — nobody wants to go
+find three API keys before they can try an app.
+
+`backend/` is a small Express server (deployed at
+`https://say-so.onrender.com`, free tier) that holds the real provider keys.
+The desktop app's `electron/services/{stt,tts,llm}.js` now call it instead of
+calling Groq/Fish Audio/OpenRouter directly - same function signatures, same
+behavior, just an HTTP hop to `backend/src/services/*.js` (the same logic,
+moved server-side) instead of a direct provider call. `say`-based local TTS
+fallback stays entirely on-device, since it needs no API key at all.
+
+**Why this needed real safety work, not just hiding keys:** once the app is
+installable by anyone, their usage bills to *my* provider accounts - there's
+no per-user billing relationship. Two layers of protection in
+`backend/src/middleware/`:
+- A shared secret the client sends as a bearer token (`auth.js`) - a basic
+  deterrent, not strong security (it ships inside the installed app, so it
+  can be extracted).
+- **The real protection:** a hard cap on total requests per day, across every
+  user combined (`rateLimit.js`, default 300/day), plus a per-IP rate limiter
+  for one client hammering it. The daily cap is intentionally the backstop
+  that doesn't depend on the shared secret holding - if it's ever hit,
+  requests fail gracefully with a clear message rather than racking up an
+  unbounded bill. Known limitation: the counter is in-memory, so it resets on
+  a server restart/redeploy - fine for a hackathon-scale safety net, not a
+  substitute for a persistent counter (e.g. Postgres/Redis) in a real
+  production deployment.
+
+**Deployed on Render** (not Railway - Railway had a platform-wide outage,
+all regions, the day this was built, so Render was the pragmatic pivot).
+Render's free tier sleeps a web service after 15 minutes of no traffic and
+takes ~1 minute to wake up, which would make a demo's first interaction
+after any idle period look broken rather than just slow. Fixed with
+`.github/workflows/keep-alive.yml` - a GitHub Actions workflow that pings
+`/health` every 10 minutes. Public repos get unlimited free Actions minutes,
+so this costs nothing and needed no new account/service to set up.
+
+**Running the backend locally** (for development): `cd backend && npm
+install`, copy `.env.example` to `.env` and fill in the three provider keys
+plus a generated `APP_SHARED_SECRET`, then `npm start`. Point the desktop
+app at it by setting `BACKEND_URL=http://localhost:8787` and
+`BACKEND_SHARED_SECRET=<same value>` in the project root's `.env`.
+
 ## Data model
 
 SQLite (`data/sayso.db`):
@@ -301,17 +345,19 @@ for it the first time the app starts watching for the hotkey.
 
 ## Reliability notes
 
-Every outbound API call (Groq, Fish Audio, OpenRouter) has a timeout, and
-there's a 20-second watchdog on the recording round-trip itself — so a flaky
-network or a stalled mic capture resets the pill to idle instead of leaving
-it stuck requiring a restart. Fish Audio failures fall back to a local voice
-automatically rather than erroring out.
+Every outbound call (client → backend, and backend → Groq/Fish
+Audio/OpenRouter) has a timeout, and there's a 20-second watchdog on the
+recording round-trip itself — so a flaky network or a stalled mic capture
+resets the pill to idle instead of leaving it stuck requiring a restart.
+Fish Audio failures fall back to a local voice automatically rather than
+erroring out.
 
-If a key is set correctly in `.env` but the app still rejects it as invalid:
-check whether that same variable name is *also* set as a Windows environment
-variable (`echo $env:GROQ_API_KEY` in PowerShell, or check System Properties
-→ Environment Variables). `dotenv` normally won't let `.env` override a
-variable that's already set at the OS level, which can make a stale system
+If a key is set correctly in `.env` but still gets rejected as invalid (this
+bit us during development, in both the app's own `.env` and later the
+backend's): check whether that same variable name is *also* set as a Windows
+environment variable (`echo $env:GROQ_API_KEY` in PowerShell, or check System
+Properties → Environment Variables). `dotenv` normally won't let `.env`
+override a variable that's already set at the OS level, which can make a stale system
 variable silently and permanently win over a correct `.env` file with no
 obvious error — this bit us once during development. main.js and
 scripts/seed.js both load `dotenv` with `{ override: true }` specifically so

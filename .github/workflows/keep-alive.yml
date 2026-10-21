@@ -1,0 +1,20 @@
+name: Keep backend awake
+
+# Render's free tier sleeps a web service after 15 minutes of no traffic,
+# and takes ~1 minute to wake on the next request - bad for a live demo.
+# This just pings the health endpoint often enough that it never sleeps.
+# Public repos get unlimited free GitHub Actions minutes, so this costs
+# nothing and needs no new account/service to set up.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {} # lets you trigger it manually from the Actions tab too
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          curl -sf https://say-so.onrender.com/health || echo "Ping failed (backend may be temporarily down)"
