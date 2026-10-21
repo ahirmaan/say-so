@@ -1,0 +1,23 @@
+{
+  "name": "say-so",
+  "version": "0.1.0",
+  "description": "Say.so - a push-to-talk voice memory assistant. Speak a fact, it gets cleaned up, filed into a folder, and saved.",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "seed": "node scripts/run-seed.js",
+    "build:dashboard": "cd dashboard-ui && npm install && npm run build",
+    "postinstall": "electron-rebuild -f -w better-sqlite3 && npm run build:dashboard"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^16.4.5",
+    "say": "^0.16.0",
+    "uiohook-napi": "^1.5.5"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "electron": "^33.2.1"
+  }
+}

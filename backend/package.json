@@ -1,0 +1,17 @@
+{
+  "name": "sayso-backend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Say.so's hosted backend - holds the real STT/TTS/LLM provider keys so end users never need their own.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.1",
+    "express-rate-limit": "^7.4.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
+  }
+}
