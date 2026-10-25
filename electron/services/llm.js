@@ -6,8 +6,8 @@ const { callBackend } = require('./backendClient');
 // backend/src/services/llm.js for the actual prompts and Claude call (moved
 // there verbatim, so behavior is unchanged - only where the call happens).
 
-async function classifyAndRespond(transcript, folders) {
-  return callBackend('/v1/classify', { transcript, folders });
+async function classifyAndRespond(transcript, folders, recentFacts) {
+  return callBackend('/v1/classify', { transcript, folders, recentFacts });
 }
 
 async function parseFolderAnswer(answerTranscript, folders) {

@@ -283,8 +283,20 @@ async function handleNewUtterance(buffer, mimeType) {
     ...f,
     recentFacts: recentFactsForFolder(f.id).map((r) => r.content),
   }));
+  // Separate from the per-folder recentFacts above (which helps route NEW
+  // facts) - this is a flat cross-folder list so "edit_fact" has something
+  // to match a correction against (e.g. "change DevFast to DevFest").
+  const recentFacts = listFacts({ sort: 'recent_updated', limit: 30 }).rows.map((f) => ({
+    id: f.id,
+    content: f.content,
+    folder_name: f.folder_name,
+  }));
 
-  const { intent, response, fact, folderId } = await classifyAndRespond(transcript, folders);
+  const { intent, response, fact, folderId, editTargetId, editNewValue } = await classifyAndRespond(
+    transcript,
+    folders,
+    recentFacts
+  );
 
   if (intent === 'save_fact') {
     if (folderId) {
@@ -295,6 +307,20 @@ async function handleNewUtterance(buffer, mimeType) {
       await speak('[curious] Which folder should this go in, or should I make a new one?');
       beginRecording();
     }
+    return;
+  }
+
+  if (intent === 'edit_folder') {
+    const folder = renameFolder(editTargetId, editNewValue);
+    await speak(`[warm] Got it — renamed to ${folder.name}.`);
+    setState('idle');
+    return;
+  }
+
+  if (intent === 'edit_fact') {
+    const updated = updateFactContent(editTargetId, editNewValue);
+    await speak(`[warm] Updated — it now says: ${updated.content}`);
+    setState('idle');
     return;
   }
 

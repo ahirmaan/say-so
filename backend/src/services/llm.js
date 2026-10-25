@@ -40,24 +40,35 @@ function extractJson(text) {
 
 // See electron/services/llm.js (the original, client-side version this was
 // moved from) for the full reasoning behind this prompt.
-async function classifyAndRespond(transcript, folders) {
-  const system = `You are Say.so, a voice assistant with two jobs depending on what the user says:
+//
+// `recentFacts` (optional) is a flat list of {id, content, folder_name} for
+// recently added/updated facts across ALL folders - separate from each
+// folder's own `recentFacts` (used for save_fact's folder-routing decision).
+// It exists so "edit_fact" has something to match a correction against.
+async function classifyAndRespond(transcript, folders, recentFacts = []) {
+  const system = `You are Say.so, a voice assistant with several jobs depending on what the user says:
 
-1. If they're directly telling you something to remember (a plain statement, or "remember that...", "save this...") - intent is "save_fact". Clean the transcript into a clear, storable fact (strip filler words, false starts, "um"/"uh", meta-instructions like "save this to Say.so"), and decide which existing folder it belongs in.
+1. SAVE: they're directly telling you something to remember (a plain statement, or "remember that...", "save this...") - intent "save_fact". Clean the transcript into a clear, storable fact (strip filler words, false starts, "um"/"uh", meta-instructions like "save this to Say.so"), and decide which existing folder it belongs in.
 
-2. If they're asking a genuine question and want an actual answer ("who is...", "what is...", "how does...", "tell me about...") - intent is "question". Answer it helpfully and conversationally from your own knowledge, in 2-4 short spoken sentences (this will be read aloud by text-to-speech, so keep it natural-sounding, not a bulleted list). If you don't know or it's about very recent events past your knowledge, say so honestly rather than guessing. Also produce a short candidate "fact" capturing the gist of your answer, in case the user wants it saved - unless they explicitly say not to save it (e.g. "just curious", "don't save this"), in which case fact must be null.
+2. EDIT A FOLDER NAME: "change X to Y", "rename X to Y", "it should be called Y, not X" - where X clearly refers to an EXISTING FOLDER's name (check the folder list below, allowing for mishearings/typos - e.g. "DevFast" can clearly match a folder actually named "Devfast 2026") - intent "edit_folder". Set edit_target_id to that folder's id, and edit_new_value to the CORRECTED FULL NAME - apply only the specific correction requested and keep the rest of the name as it was (e.g. folder "Devfast 2026" + "change DevFast to DevFest" -> edit_new_value "DevFest 2026", not just "DevFest").
 
-3. Anything else (greetings, unclear, chit-chat) - intent is "chat". Reply naturally and briefly; fact should usually be null unless there's something clearly worth offering to remember.
+3. EDIT A SAVED FACT: same "change X to Y" shape, but X clearly refers to the CONTENT of something already saved (check the recent facts list below), not a folder name - intent "edit_fact". Set edit_target_id to that fact's id, edit_new_value to the corrected fact content, applying only the specific correction and keeping the rest as it was.
 
-Folder rules (for both save_fact's fact, and question/chat's candidate fact):
+   If a "change X to Y" request doesn't clearly match either an existing folder name or a recent fact, don't guess - use intent "chat" and ask out loud (in "response") which one they mean.
+
+4. QUESTION: a genuine question wanting an actual answer ("who is...", "what is...", "how does...", "tell me about...") - intent "question". Answer it helpfully and conversationally from your own knowledge, in 2-4 short spoken sentences (this will be read aloud by text-to-speech, so keep it natural-sounding, not a bulleted list). If you don't know or it's about very recent events past your knowledge, say so honestly rather than guessing. Also produce a short candidate "fact" capturing the gist of your answer, in case the user wants it saved - unless they explicitly say not to save it (e.g. "just curious", "don't save this"), in which case fact must be null.
+
+5. CHAT: anything else (greetings, unclear, chit-chat) - intent "chat". Reply naturally and briefly; fact should usually be null unless there's something clearly worth offering to remember.
+
+Folder rules (for save_fact's fact, and question/chat's candidate fact):
 - If it clearly matches the topic of exactly one existing folder (by name and by the kind of facts already in it), set folder_id to that folder's id.
 - If it's ambiguous, could fit multiple folders, fits none well, or fact is null, set folder_id to null.
 - Always explain your folder decision in one short sentence.
 
 Respond with ONLY a JSON object:
-{"intent": "save_fact"|"question"|"chat", "response": string|null, "fact": string|null, "folder_id": number|null, "reasoning": string}
+{"intent": "save_fact"|"edit_folder"|"edit_fact"|"question"|"chat", "response": string|null, "fact": string|null, "folder_id": number|null, "edit_target_id": number|null, "edit_new_value": string|null, "reasoning": string}
 
-"response" is the spoken reply for "question"/"chat" (null for "save_fact"). "fact" is the clean/candidate fact (null only for "chat" with nothing worth remembering, or when the user said not to save it).`;
+"response" is the spoken reply for "question"/"chat" (null otherwise). "fact" is the clean/candidate fact for save_fact/question/chat (null for edit_folder/edit_fact). "edit_target_id"/"edit_new_value" are only for edit_folder/edit_fact (null otherwise).`;
 
   const foldersDescription = folders.length
     ? folders
@@ -72,11 +83,15 @@ Respond with ONLY a JSON object:
         .join('\n')
     : '(no folders exist yet)';
 
-  const user = `Existing folders:\n${foldersDescription}\n\nRaw transcript:\n"${transcript}"`;
+  const recentFactsDescription = recentFacts.length
+    ? recentFacts.map((f) => `- id=${f.id} folder="${f.folder_name}" content="${f.content}"`).join('\n')
+    : '(no facts saved yet)';
+
+  const user = `Existing folders:\n${foldersDescription}\n\nRecently saved facts (for matching edit_fact corrections against):\n${recentFactsDescription}\n\nRaw transcript:\n"${transcript}"`;
 
   const result = await callClaude(system, user);
   console.log(
-    `[classify] intent=${result.intent} fact=${JSON.stringify(result.fact)} folder_id=${result.folder_id} (${result.reasoning})`
+    `[classify] intent=${result.intent} fact=${JSON.stringify(result.fact)} folder_id=${result.folder_id} edit_target_id=${result.edit_target_id} edit_new_value=${JSON.stringify(result.edit_new_value)} (${result.reasoning})`
   );
 
   return {
@@ -84,6 +99,8 @@ Respond with ONLY a JSON object:
     response: result.response ?? null,
     fact: result.fact ?? null,
     folderId: result.folder_id ?? null,
+    editTargetId: result.edit_target_id ?? null,
+    editNewValue: result.edit_new_value ?? null,
   };
 }
 

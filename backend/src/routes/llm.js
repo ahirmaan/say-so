@@ -5,9 +5,9 @@ const router = express.Router();
 
 router.post('/classify', async (req, res) => {
   try {
-    const { transcript, folders } = req.body;
+    const { transcript, folders, recentFacts } = req.body;
     if (!transcript) return res.status(400).json({ error: 'transcript is required' });
-    res.json(await classifyAndRespond(transcript, folders || []));
+    res.json(await classifyAndRespond(transcript, folders || [], recentFacts || []));
   } catch (err) {
     console.error('[/v1/classify] error:', err.message);
     res.status(502).json({ error: err.message });

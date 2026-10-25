@@ -105,14 +105,23 @@ function renderBars(analyser) {
 // there's no live/streaming captioning while you talk - but we already have
 // live mic volume data for the waveform, which is enough to detect "they've
 // gone quiet" and auto-stop without needing a second key press.
-const VAD_SILENCE_RMS = 0.045; // below this counts as "quiet" (lower = more forgiving of quieter speech)
+//
+// A single fixed RMS threshold doesn't work across different mics/rooms/mic
+// gain settings (confirmed - it wasn't reliably detecting real speech as
+// "speaking" at all, which is why auto-stop never fired). Calibrating to the
+// actual ambient noise at the start of each recording instead - "speaking"
+// is judged relative to what this specific mic/room/moment looks like, not
+// a guessed universal number.
+const VAD_CALIBRATION_MS = 350; // sample ambient noise for this long before judging speech vs silence
 const VAD_SILENCE_HOLD_MS = 1900; // how long of continuous quiet before auto-stopping (natural sentences have pauses)
-const VAD_ARM_DELAY_MS = 500; // grace period after starting before silence can trigger a stop
 
+let vadCalibrationSamples = [];
+let vadCalibrationEndAt = 0;
+let vadSpeechThreshold = null; // null while still calibrating
 let vadSpeechHeard = false;
 let vadQuietSince = null;
-let vadArmedAt = 0;
 let vadStopRequested = false;
+let vadLastLogAt = 0;
 
 function computeRms(analyser) {
   const data = new Uint8Array(analyser.fftSize);
@@ -126,18 +135,42 @@ function computeRms(analyser) {
 }
 
 function resetVad() {
+  vadCalibrationSamples = [];
+  vadCalibrationEndAt = performance.now() + VAD_CALIBRATION_MS;
+  vadSpeechThreshold = null;
   vadSpeechHeard = false;
   vadQuietSince = null;
   vadStopRequested = false;
-  vadArmedAt = performance.now() + VAD_ARM_DELAY_MS;
+  vadLastLogAt = 0;
 }
 
 function checkVad(analyser) {
   if (vadStopRequested) return;
   const now = performance.now();
-  if (now < vadArmedAt) return;
+  const rms = computeRms(analyser);
 
-  const isSpeaking = computeRms(analyser) > VAD_SILENCE_RMS;
+  if (now < vadCalibrationEndAt) {
+    vadCalibrationSamples.push(rms);
+    return;
+  }
+
+  if (vadSpeechThreshold === null) {
+    // Calibration window just ended - the quietest moment in it is the best
+    // estimate of true ambient noise (robust even if speech started right
+    // away: there's usually at least one brief low-energy instant in there).
+    const floor = vadCalibrationSamples.length ? Math.min(...vadCalibrationSamples) : 0;
+    vadSpeechThreshold = Math.max(floor + 0.02, 0.025);
+    console.log(`[pill] VAD calibrated - noise floor=${floor.toFixed(4)} -> speech threshold=${vadSpeechThreshold.toFixed(4)}`);
+  }
+
+  // Periodic diagnostic so a future tuning pass has real numbers to go on,
+  // instead of guessing again.
+  if (now - vadLastLogAt > 1000) {
+    vadLastLogAt = now;
+    console.log(`[pill] vad rms=${rms.toFixed(4)} threshold=${vadSpeechThreshold.toFixed(4)} speechHeard=${vadSpeechHeard}`);
+  }
+
+  const isSpeaking = rms > vadSpeechThreshold;
 
   if (isSpeaking) {
     vadSpeechHeard = true;
