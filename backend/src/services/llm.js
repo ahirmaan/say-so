@@ -45,7 +45,13 @@ function extractJson(text) {
 // recently added/updated facts across ALL folders - separate from each
 // folder's own `recentFacts` (used for save_fact's folder-routing decision).
 // It exists so "edit_fact" has something to match a correction against.
-async function classifyAndRespond(transcript, folders, recentFacts = []) {
+//
+// `conversationHistory` (optional) is a short rolling window of recent
+// {role: 'user'|'assistant', content} turns from question/chat exchanges -
+// without it, every utterance is judged in total isolation, so "tell me
+// more about that" or "what about his companies" has nothing to resolve
+// "that"/"his" against.
+async function classifyAndRespond(transcript, folders, recentFacts = [], conversationHistory = []) {
   const system = `You are Say.so, a voice assistant with several jobs depending on what the user says:
 
 1. SAVE: they're directly telling you something to remember (a plain statement, or "remember that...", "save this...") - intent "save_fact". Clean the transcript into a clear, storable fact (strip filler words, false starts, "um"/"uh", meta-instructions like "save this to Say.so"), and decide which existing folder it belongs in.
@@ -56,7 +62,9 @@ async function classifyAndRespond(transcript, folders, recentFacts = []) {
 
    If a "change X to Y" request doesn't clearly match either an existing folder name or a recent fact, don't guess - use intent "chat" and ask out loud (in "response") which one they mean.
 
-4. QUESTION: a genuine question wanting an actual answer ("who is...", "what is...", "how does...", "tell me about...") - intent "question". Answer it helpfully and conversationally from your own knowledge, in 2-4 short spoken sentences (this will be read aloud by text-to-speech, so keep it natural-sounding, not a bulleted list). If you don't know or it's about very recent events past your knowledge, say so honestly rather than guessing. Also produce a short candidate "fact" capturing the gist of your answer, in case the user wants it saved - unless they explicitly say not to save it (e.g. "just curious", "don't save this"), in which case fact must be null.
+4. QUESTION: wanting an actual answer, from a real question ("who is...", "what is...", "how does...") OR from a statement that implies they want information/explanation even with no question mark - e.g. "I'm researching X and want to know more", "I'm trying to learn about X", "I'm curious about X", "tell me about X" - intent "question" either way. Answer helpfully and conversationally from your own knowledge, in 2-4 short spoken sentences (this will be read aloud by text-to-speech, so keep it natural-sounding, not a bulleted list). If you don't know or it's about very recent events past your knowledge, say so honestly rather than guessing. Also produce a short candidate "fact" capturing the gist of your answer, in case the user wants it saved - unless they explicitly say not to save it (e.g. "just curious", "don't save this"), in which case fact must be null.
+
+   Use the recent conversation below to resolve follow-ups: if this utterance is a continuation ("tell me more", "what about his companies", "and when was that") rather than a fresh standalone topic, treat it as "question" and answer using that prior context - don't require every follow-up to re-state the subject.
 
 5. CHAT: anything else (greetings, unclear, chit-chat) - intent "chat". Reply naturally and briefly; fact should usually be null unless there's something clearly worth offering to remember.
 
@@ -87,7 +95,11 @@ Respond with ONLY a JSON object:
     ? recentFacts.map((f) => `- id=${f.id} folder="${f.folder_name}" content="${f.content}"`).join('\n')
     : '(no facts saved yet)';
 
-  const user = `Existing folders:\n${foldersDescription}\n\nRecently saved facts (for matching edit_fact corrections against):\n${recentFactsDescription}\n\nRaw transcript:\n"${transcript}"`;
+  const historyDescription = conversationHistory.length
+    ? conversationHistory.map((turn) => `${turn.role === 'user' ? 'User' : 'You'}: ${turn.content}`).join('\n')
+    : '(nothing yet - this is the start of the conversation)';
+
+  const user = `Existing folders:\n${foldersDescription}\n\nRecently saved facts (for matching edit_fact corrections against):\n${recentFactsDescription}\n\nRecent conversation (for resolving follow-ups):\n${historyDescription}\n\nRaw transcript:\n"${transcript}"`;
 
   const result = await callClaude(system, user);
   console.log(

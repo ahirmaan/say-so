@@ -66,6 +66,21 @@ let pipelineWatchdog = null; // guards against a hang with no error to catch (e.
 //   'confirm-new-folder'  - "<name> doesn't exist yet, create it?"
 let pendingFact = null; // { content, rawTranscript, folderId?, stage, proposedFolderName? }
 
+// A short rolling window of recent question/chat exchanges, so a follow-up
+// ("tell me more", "what about his companies") has something to resolve
+// against instead of every utterance being judged in total isolation.
+// Deliberately NOT persisted to disk or included for save_fact/edit actions
+// - this is conversational short-term memory, not part of the saved record.
+const MAX_HISTORY_TURNS = 4;
+let conversationHistory = []; // [{ role: 'user' | 'assistant', content }]
+
+function pushHistory(userText, assistantText) {
+  conversationHistory.push({ role: 'user', content: userText }, { role: 'assistant', content: assistantText });
+  if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+    conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+  }
+}
+
 let audioFinishedResolve = null;
 
 const PILL_WIDTH = 320;
@@ -295,7 +310,8 @@ async function handleNewUtterance(buffer, mimeType) {
   const { intent, response, fact, folderId, editTargetId, editNewValue } = await classifyAndRespond(
     transcript,
     folders,
-    recentFacts
+    recentFacts,
+    conversationHistory
   );
 
   if (intent === 'save_fact') {
@@ -331,6 +347,8 @@ async function handleNewUtterance(buffer, mimeType) {
     setState('idle');
     return;
   }
+
+  pushHistory(transcript, response);
 
   if (fact) {
     pendingFact = { content: fact, rawTranscript: transcript, folderId, stage: 'confirm-save-answer' };
