@@ -10,7 +10,7 @@ const { callBackend } = require('./backendClient');
 // ever slow, rate-limited, or unreachable - that fallback stays entirely
 // local (OS voice), so it doesn't depend on the backend at all.
 async function fetchFishAudioBuffer(text) {
-  const { audioBase64 } = await callBackend('/v1/tts', { text }, { timeoutMs: 12000 });
+  const { audioBase64 } = await callBackend('/v1/tts', { text }, { timeoutMs: 20000 });
   return Buffer.from(audioBase64, 'base64');
 }
 

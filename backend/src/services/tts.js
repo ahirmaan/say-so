@@ -20,7 +20,13 @@ async function fetchFishAudioBuffer(text) {
       mp3_bitrate: 128,
       latency: 'low',
     }),
-    signal: AbortSignal.timeout(10000),
+    // Fish Audio's generation time scales with text length - 10s was cutting
+    // off longer (but still normal, e.g. ~400-character) conversational
+    // answers before they finished synthesizing. 18s gives real headroom as
+    // a safety net; the system prompt's ~220-char response cap (see
+    // services/llm.js) is the primary fix, keeping most replies well under
+    // this anyway.
+    signal: AbortSignal.timeout(18000),
   });
 
   if (!res.ok) {
