@@ -366,9 +366,9 @@ exists if a key ever looks "wrong" despite the file being right.
 
 ## Known limitations (MVP scope)
 
-- No folder nesting, no settings UI beyond `.env` — intentionally out of
-  scope for Phase 1 per the brief. The dashboard is read-only (stats + recent
-  facts), no editing from it yet.
+- No folder nesting or tags — intentionally out of scope for Phase 1 per the
+  brief (see "Dashboard" above for what the in-app Settings page does cover,
+  and what it honestly marks "Not yet supported" instead of faking).
 - A hotkey press that arrives while the pipeline is mid-flight
   (processing/speaking) is ignored rather than queued, to avoid overlapping
   requests.

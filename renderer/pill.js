@@ -114,14 +114,25 @@ function renderBars(analyser) {
 // a guessed universal number.
 const VAD_CALIBRATION_MS = 350; // sample ambient noise for this long before judging speech vs silence
 const VAD_SILENCE_HOLD_MS = 1900; // how long of continuous quiet before auto-stopping (natural sentences have pauses)
+// Hard safety net: if someone starts talking the instant they press the
+// hotkey (the normal, expected flow), the calibration window can end up
+// sampling only speech, never a true quiet instant - which would set the
+// noise floor (and therefore the speech threshold) too high, so real speech
+// never registers as "louder than ambient" and auto-stop silently never
+// fires, forcing a manual second press every time. Capping how long we'll
+// ever wait on the RMS logic below means that failure mode is, at worst, a
+// slightly-too-long recording - never a stuck pill requiring intervention.
+const VAD_MAX_LISTEN_MS = 12000;
 
 let vadCalibrationSamples = [];
 let vadCalibrationEndAt = 0;
+let vadRunningFloor = Infinity; // ambient-noise estimate - only ever revised downward, so a quiet instant later in the utterance can rescue a contaminated initial calibration
 let vadSpeechThreshold = null; // null while still calibrating
 let vadSpeechHeard = false;
 let vadQuietSince = null;
 let vadStopRequested = false;
 let vadLastLogAt = 0;
+let vadStartedAt = 0;
 
 function computeRms(analyser) {
   const data = new Uint8Array(analyser.fftSize);
@@ -137,11 +148,13 @@ function computeRms(analyser) {
 function resetVad() {
   vadCalibrationSamples = [];
   vadCalibrationEndAt = performance.now() + VAD_CALIBRATION_MS;
+  vadRunningFloor = Infinity;
   vadSpeechThreshold = null;
   vadSpeechHeard = false;
   vadQuietSince = null;
   vadStopRequested = false;
   vadLastLogAt = 0;
+  vadStartedAt = performance.now();
 }
 
 function checkVad(analyser) {
@@ -149,19 +162,31 @@ function checkVad(analyser) {
   const now = performance.now();
   const rms = computeRms(analyser);
 
+  if (now - vadStartedAt >= VAD_MAX_LISTEN_MS) {
+    vadStopRequested = true;
+    console.log('[pill] max listen duration reached - forcing auto-stop');
+    window.sayso.requestStop();
+    return;
+  }
+
   if (now < vadCalibrationEndAt) {
     vadCalibrationSamples.push(rms);
+    vadRunningFloor = Math.min(vadRunningFloor, rms);
     return;
   }
 
   if (vadSpeechThreshold === null) {
-    // Calibration window just ended - the quietest moment in it is the best
-    // estimate of true ambient noise (robust even if speech started right
-    // away: there's usually at least one brief low-energy instant in there).
-    const floor = vadCalibrationSamples.length ? Math.min(...vadCalibrationSamples) : 0;
-    vadSpeechThreshold = Math.max(floor + 0.02, 0.025);
-    console.log(`[pill] VAD calibrated - noise floor=${floor.toFixed(4)} -> speech threshold=${vadSpeechThreshold.toFixed(4)}`);
+    const floor = vadCalibrationSamples.length ? Math.min(...vadCalibrationSamples) : rms;
+    vadRunningFloor = Math.min(vadRunningFloor, floor);
+    console.log(`[pill] VAD calibrated - initial noise floor=${vadRunningFloor.toFixed(4)}`);
   }
+
+  // Keep revising the floor downward for the rest of the recording (never
+  // upward) - a natural pause mid-sentence can lower it further than the
+  // initial calibration window managed to, and the threshold below tracks
+  // it live rather than freezing at whatever the first 350ms produced.
+  vadRunningFloor = Math.min(vadRunningFloor, rms);
+  vadSpeechThreshold = Math.max(vadRunningFloor + 0.02, 0.025);
 
   // Periodic diagnostic so a future tuning pass has real numbers to go on,
   // instead of guessing again.
