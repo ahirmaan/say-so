@@ -21,15 +21,15 @@ const LANDING_PAGES = [
 
 function Row({ icon: Icon, label, control, hint }: { icon: any; label: string; control: React.ReactNode; hint?: string }) {
   return (
-    <div className="flex items-center justify-between border-b border-border py-3.5 last:border-0">
-      <div className="flex items-center gap-2.5">
-        <Icon size={15} className="text-text-muted" />
-        <div>
+    <div className="flex items-center justify-between gap-6 border-b border-border py-3.5 last:border-0">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <Icon size={15} className="shrink-0 text-text-muted" />
+        <div className="min-w-0">
           <div className="text-sm text-text">{label}</div>
           {hint && <div className="text-xs text-text-muted">{hint}</div>}
         </div>
       </div>
-      {control}
+      <div className="shrink-0 text-right">{control}</div>
     </div>
   );
 }

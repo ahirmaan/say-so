@@ -39,6 +39,7 @@ export default function RenameFolderDialog({ folder, onClose, onRenamed }: Renam
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && handleSave()}
         autoFocus
+        maxLength={80}
         className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-text outline-none focus:border-accent/60"
       />
       <div className="mt-5 flex justify-end gap-2">

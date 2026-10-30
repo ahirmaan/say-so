@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Pencil, Palette, Trash2 } from 'lucide-react';
 import type { Folder } from '../lib/types';
 import { resolveFolderIcon } from '../lib/folderIcons';
-import { formatRelativeTime } from '../lib/format';
+import { formatRelativeTime, pluralize } from '../lib/format';
 import ActionMenu from './ActionMenu';
 
 interface FolderCardProps {
@@ -34,8 +34,8 @@ export default function FolderCard({ folder, onRename, onChangeIcon, onDelete }:
         />
       </div>
 
-      <div className="mt-3 text-sm font-medium text-text">{folder.name}</div>
-      <div className="text-xs text-text-muted">{folder.fact_count} notes</div>
+      <div className="mt-3 line-clamp-2 text-sm font-medium text-text">{folder.name}</div>
+      <div className="text-xs text-text-muted">{pluralize(folder.fact_count, 'note')}</div>
 
       {folder.description && (
         <p className="mt-2 line-clamp-2 text-xs text-text-secondary">{folder.description}</p>

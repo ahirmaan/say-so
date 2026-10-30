@@ -42,7 +42,10 @@ export default function Topbar({ title, description }: TopbarProps) {
         e.preventDefault();
         inputWrapRef.current?.querySelector('input')?.focus();
       }
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setQuery('');
+      }
     }
     function onClickOutside(e: MouseEvent) {
       if (inputWrapRef.current && !inputWrapRef.current.contains(e.target as Node)) {

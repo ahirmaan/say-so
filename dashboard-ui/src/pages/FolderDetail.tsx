@@ -8,6 +8,7 @@ import EmptyState from '../components/EmptyState';
 import ActionMenu from '../components/ActionMenu';
 import type { Folder, Note, SortOption } from '../lib/types';
 import { resolveFolderIcon } from '../lib/folderIcons';
+import { pluralize } from '../lib/format';
 import { useNoteActions } from '../lib/useNoteActions';
 import { useFolderActions } from '../lib/useFolderActions';
 
@@ -71,7 +72,7 @@ export default function FolderDetail() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-text">{folder.name}</h2>
             {folder.description && <p className="text-sm text-text-secondary">{folder.description}</p>}
-            <p className="text-xs text-text-muted">{folder.fact_count} notes</p>
+            <p className="text-xs text-text-muted">{pluralize(folder.fact_count, 'note')}</p>
           </div>
         </div>
         <ActionMenu

@@ -54,6 +54,7 @@ export default function CreateFolderDialog({ open, onClose, onCreated }: CreateF
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
+            maxLength={80}
             placeholder="e.g. Product Ideas"
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-text outline-none focus:border-accent/60"
           />

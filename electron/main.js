@@ -292,8 +292,30 @@ async function handleAudio({ base64, mimeType }) {
 // question). Figures out whether this is a fact to save outright, a genuine
 // question to answer conversationally, or just chat - see
 // services/llm.js's classifyAndRespond for the full reasoning.
-async function handleNewUtterance(buffer, mimeType) {
+// Whisper returns an empty (or whitespace-only) string when a clip had no
+// usable speech - silence, a clipped/too-short recording, pure noise. Every
+// handler below transcribes an audio clip and immediately feeds it to an LLM
+// call (classify, parseYesNo, parseFolderAnswer); on an empty transcript
+// there's nothing for that call to work with, so it'd just burn 2-3s to
+// improvise some form of "didn't catch that" anyway - or, worse, run with a
+// meaningless answer (e.g. proposing an empty-named folder). Call this right
+// after transcribeAudio() and bail out of the handler if it returns null.
+async function transcribeOrReprompt(buffer, mimeType, repromptText) {
   const transcript = await transcribeAudio(buffer, mimeType);
+  if (transcript && transcript.trim()) return transcript;
+  await speak(repromptText);
+  beginRecording();
+  return null;
+}
+
+async function handleNewUtterance(buffer, mimeType) {
+  const transcript = await transcribeOrReprompt(
+    buffer,
+    mimeType,
+    "[apologetic] Sorry, I didn't catch that - could you say it again?"
+  );
+  if (!transcript) return;
+
   const folders = listFolders().map((f) => ({
     ...f,
     recentFacts: recentFactsForFolder(f.id).map((r) => r.content),
@@ -363,7 +385,12 @@ async function handleNewUtterance(buffer, mimeType) {
 // They've answered yes/no to "want me to save that as a fact?" after a
 // conversational answer.
 async function handleConfirmSaveAnswer(buffer, mimeType) {
-  const answerTranscript = await transcribeAudio(buffer, mimeType);
+  const answerTranscript = await transcribeOrReprompt(
+    buffer,
+    mimeType,
+    "[apologetic] Sorry, I didn't catch that - should I save it as a fact?"
+  );
+  if (!answerTranscript) return;
   const confirmed = await parseYesNo(answerTranscript);
   const { content, rawTranscript, folderId } = pendingFact;
 
@@ -388,7 +415,12 @@ async function handleConfirmSaveAnswer(buffer, mimeType) {
 // They've answered "which folder" - either an existing one (saves right
 // away) or a new name (asks for confirmation before actually creating it).
 async function handleFolderAnswer(buffer, mimeType) {
-  const answerTranscript = await transcribeAudio(buffer, mimeType);
+  const answerTranscript = await transcribeOrReprompt(
+    buffer,
+    mimeType,
+    "[apologetic] Sorry, I didn't catch that - which folder should this go in, or should I make a new one?"
+  );
+  if (!answerTranscript) return;
   const folders = listFolders();
   const decision = await parseFolderAnswer(answerTranscript, folders);
 
@@ -410,7 +442,12 @@ async function handleFolderAnswer(buffer, mimeType) {
 
 // They've answered yes/no to "want me to create <name>?"
 async function handleNewFolderConfirmation(buffer, mimeType) {
-  const answerTranscript = await transcribeAudio(buffer, mimeType);
+  const answerTranscript = await transcribeOrReprompt(
+    buffer,
+    mimeType,
+    "[apologetic] Sorry, I didn't catch that - should I create it?"
+  );
+  if (!answerTranscript) return;
   const confirmed = await parseYesNo(answerTranscript);
 
   if (confirmed) {
